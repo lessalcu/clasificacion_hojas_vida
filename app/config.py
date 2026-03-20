@@ -16,6 +16,10 @@ class Config:
     SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
     SUPABASE_PROJECT_REF = os.getenv("SUPABASE_PROJECT_REF")
 
+    MAX_CV_FILE_SIZE_MB = int(os.getenv("MAX_CV_FILE_SIZE_MB", 6))
+    MAX_CV_FILE_SIZE_BYTES = MAX_CV_FILE_SIZE_MB * 1024 * 1024
+    MAX_BATCH_FILES = int(os.getenv("MAX_BATCH_FILES", 20))
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_REQUEST_SIZE_MB", 30)) * 1024 * 1024
 
 class DevelopmentConfig(Config):
     DEBUG = True
