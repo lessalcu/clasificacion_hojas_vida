@@ -10,8 +10,10 @@ service = JobProfileService()
 def create_job_profile():
     payload = request.get_json() or {}
     result = service.create_job_profile(payload)
+
     return jsonify({
         "success": True,
+        "message": "Job profile created successfully",
         "data": result
     }), 201
 
@@ -20,6 +22,7 @@ def create_job_profile():
 def get_job_profiles():
     limit = request.args.get("limit", default=10, type=int)
     result = service.get_job_profiles(limit=limit)
+
     return jsonify({
         "success": True,
         "data": result
@@ -29,6 +32,7 @@ def get_job_profiles():
 @job_profile_bp.get("/<item_id>")
 def get_job_profile_by_id(item_id: str):
     result = service.get_job_profile_by_id(item_id)
+
     return jsonify({
         "success": True,
         "data": result
@@ -39,8 +43,10 @@ def get_job_profile_by_id(item_id: str):
 def update_job_profile(item_id: str):
     payload = request.get_json() or {}
     result = service.update_job_profile(item_id, payload)
+
     return jsonify({
         "success": True,
+        "message": "Job profile updated successfully",
         "data": result
     }), 200
 
@@ -48,7 +54,9 @@ def update_job_profile(item_id: str):
 @job_profile_bp.delete("/<item_id>")
 def delete_job_profile(item_id: str):
     result = service.delete_job_profile(item_id)
+
     return jsonify({
         "success": True,
+        "message": "Job profile deleted successfully",
         "data": result
     }), 200

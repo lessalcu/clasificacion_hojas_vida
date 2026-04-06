@@ -14,14 +14,46 @@ class StorageService:
         bucket = supabase.storage.from_(bucket_name)
 
         with open(local_file_path, "rb") as file_obj:
-            result = bucket.upload(
-                path=remote_path,
-                file=file_obj,
-                file_options={
-                    "content-type": content_type,
-                    "upsert": str(upsert).lower(),
-                },
-            )
+            file_bytes = file_obj.read()
+
+        result = bucket.upload(
+            path=remote_path,
+            file=file_bytes,
+            file_options={
+                "content-type": content_type,
+                "upsert": str(upsert).lower(),
+            },
+        )
+
+        return result
+
+    def upload_fileobj(
+        self,
+        bucket_name: str,
+        remote_path: str,
+        file_obj,
+        content_type: str,
+        upsert: bool = False,
+    ):
+        supabase = get_supabase()
+        bucket = supabase.storage.from_(bucket_name)
+
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
+        if not hasattr(file_obj, "read"):
+            raise TypeError("file_obj must be a readable file-like object")
+
+        file_bytes = file_obj.read()
+
+        result = bucket.upload(
+            path=remote_path,
+            file=file_bytes,
+            file_options={
+                "content-type": content_type,
+                "upsert": str(upsert).lower(),
+            },
+        )
 
         return result
 
