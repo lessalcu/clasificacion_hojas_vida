@@ -79,6 +79,10 @@ class CandidateProfileService:
         "curso",
         "certificacion",
         "certificación",
+        "educacion superior",
+        "educación superior",
+        "educacion general basica",
+        "educación general básica",
     ]
 
     INSTITUTION_HINTS = [
@@ -330,7 +334,7 @@ class CandidateProfileService:
             return family, body
 
         return None, text.strip()
-    
+
     def _looks_like_skills_block(self, text: str):
         if not text:
             return False
@@ -363,7 +367,7 @@ class CandidateProfileService:
             return True
 
         return False
-    
+
     def _match_header_family_from_block(self, text: str):
         if not text:
             return None
@@ -372,9 +376,7 @@ class CandidateProfileService:
         if not lines:
             return None
 
-        candidates = []
-        candidates.append(lines[0])
-
+        candidates = [lines[0]]
         if len(lines) >= 2:
             candidates.append(f"{lines[0]} {lines[1]}")
 
@@ -409,70 +411,63 @@ class CandidateProfileService:
         text = re.sub(r"\s{2,}", " ", text).strip()
         return text[:max_chars]
 
-    def _extract_experience_entries_from_blocks(self, blocks: list[dict[str, Any]]):
-        if not blocks:
-            return []
-
-        all_lines = []
+    def _flatten_section_lines(self, blocks: list[dict[str, Any]]):
+        lines: list[str] = []
         for block in blocks:
-            lines = [line.strip() for line in block.get("text", "").splitlines() if line.strip()]
-            all_lines.extend(lines)
+            block_lines = [
+                line.strip()
+                for line in block.get("text", "").splitlines()
+                if line.strip()
+            ]
+            lines.extend(block_lines)
+        return lines
 
-        if not all_lines:
+    def _extract_experience_entries_from_blocks(self, blocks: list[dict[str, Any]]):
+        lines = self._flatten_section_lines(blocks)
+        if not lines:
             return []
 
         entries: list[dict[str, Any]] = []
-        current = None
+        current: dict[str, Any] | None = None
         index = 0
 
-        while index < len(all_lines):
-            line = all_lines[index]
+        while index < len(lines):
+            line = self._single_line(lines[index])
 
-            if self._looks_like_experience_title(line):
-                if current and self._entry_has_content(current):
-                    entries.append(self._normalize_entry(current))
+            if current is None:
+                if not self._looks_like_experience_title(line):
+                    index += 1
+                    continue
+
+                title = line
+                index += 1
+
+                while index < len(lines) and self._looks_like_experience_title_continuation(
+                    title, lines[index]
+                ):
+                    title = f"{title} {self._single_line(lines[index])}"
+                    index += 1
 
                 current = {
-                    "title": self._single_line(line),
+                    "title": title,
                     "organization": None,
                     "period": None,
                     "description": None,
                 }
 
-                index += 1
-
-                if index < len(all_lines) and self._looks_like_period(all_lines[index]):
-                    current["period"] = self._single_line(all_lines[index])
-                    index += 1
-
-                while index < len(all_lines):
-                    next_line = all_lines[index]
-
-                    if self._looks_like_experience_title(next_line):
-                        break
-
-                    if current.get("period") is None and self._looks_like_period(next_line):
-                        current["period"] = self._single_line(next_line)
-                    else:
-                        current["description"] = self._append_text(
-                            current.get("description"),
-                            next_line,
-                        )
-
+                if index < len(lines) and self._looks_like_period(lines[index]):
+                    current["period"] = self._single_line(lines[index])
                     index += 1
 
                 continue
 
-            if current is None:
-                current = {
-                    "title": None,
-                    "organization": None,
-                    "period": None,
-                    "description": None,
-                }
+            if self._looks_like_experience_title(line):
+                entries.append(self._normalize_entry(current))
+                current = None
+                continue
 
             if current.get("period") is None and self._looks_like_period(line):
-                current["period"] = self._single_line(line)
+                current["period"] = line
             else:
                 current["description"] = self._append_text(
                     current.get("description"),
@@ -484,30 +479,25 @@ class CandidateProfileService:
         if current and self._entry_has_content(current):
             entries.append(self._normalize_entry(current))
 
-        return self._merge_fragmented_experience_entries(entries[:10])
+        return entries[:10]
 
     def _extract_education_entries_from_blocks(self, blocks: list[dict[str, Any]]):
-        if not blocks:
-            return []
-
-        all_lines = []
-        for block in blocks:
-            lines = [line.strip() for line in block.get("text", "").splitlines() if line.strip()]
-            all_lines.extend(lines)
-
-        if not all_lines:
+        lines = self._flatten_section_lines(blocks)
+        if not lines:
             return []
 
         entries = []
         current = None
 
-        for line in all_lines:
+        for raw_line in lines:
+            line = self._single_line(raw_line)
+
             if self._looks_like_education_degree(line):
                 if current and self._education_entry_has_content(current):
                     entries.append(self._normalize_education_entry(current))
 
                 current = {
-                    "degree": self._single_line(line),
+                    "degree": line,
                     "institution": None,
                     "level": None,
                     "period": None,
@@ -515,18 +505,12 @@ class CandidateProfileService:
                 continue
 
             if current is None:
-                current = {
-                    "degree": self._single_line(line),
-                    "institution": None,
-                    "level": None,
-                    "period": None,
-                }
                 continue
 
             if self._looks_like_institution(line) and not current.get("institution"):
-                current["institution"] = self._single_line(line)
+                current["institution"] = line
             elif self._looks_like_period(line) and not current.get("period"):
-                current["period"] = self._single_line(line)
+                current["period"] = line
             else:
                 current["level"] = self._append_text(current.get("level"), line)
 
@@ -582,45 +566,6 @@ class CandidateProfileService:
 
         return list(items.values())
 
-    def _parse_language_line(self, line: str, source_type: str):
-        if not line:
-            return None
-
-        normalized_line = self._canonicalize(line)
-
-        for canonical, variants in self.config["language_aliases"].items():
-            if any(self._canonicalize(variant) in normalized_line for variant in variants):
-                return {
-                    "name": self._display_language(canonical),
-                    "canonical": canonical,
-                    "level": self._infer_language_level(line),
-                    "sources": [source_type],
-                }
-
-        return None
-    
-    def _infer_language_level(self, text: str):
-        normalized = self._canonicalize(text)
-
-        if "nativo" in normalized or "native" in normalized:
-            return "nativo"
-
-        cefr_match = self.CEFR_LEVEL_RE.search(text)
-        if cefr_match:
-            level = f"{cefr_match.group(1).upper()}{cefr_match.group(2)}"
-            if level in {"A1", "A2"}:
-                return "basico"
-            if level in {"B1", "B2"}:
-                return "intermedio"
-            if level in {"C1", "C2"}:
-                return "avanzado"
-
-        for level_key, aliases in self.config["language_levels"].items():
-            if any(self._canonicalize(alias) in normalized for alias in aliases):
-                return level_key
-
-        return None
-
     def _extract_skills_from_blocks(
         self,
         skills_blocks: list[dict[str, Any]],
@@ -647,17 +592,60 @@ class CandidateProfileService:
 
         return list(items.values())
 
+    def _parse_language_line(self, line: str, source_type: str):
+        if not line:
+            return None
+
+        normalized_line = self._canonicalize(line)
+
+        for canonical, variants in self.config["language_aliases"].items():
+            if any(self._canonicalize(variant) in normalized_line for variant in variants):
+                return {
+                    "name": self._display_language(canonical),
+                    "canonical": canonical,
+                    "level": self._infer_language_level(line),
+                    "sources": [source_type],
+                }
+
+        return None
+
+    def _infer_language_level(self, text: str):
+        normalized = self._canonicalize(text)
+
+        if "nativo" in normalized or "native" in normalized:
+            return "nativo"
+
+        cefr_match = self.CEFR_LEVEL_RE.search(text)
+        if cefr_match:
+            level = f"{cefr_match.group(1).upper()}{cefr_match.group(2)}"
+            if level in {"A1", "A2"}:
+                return "basico"
+            if level in {"B1", "B2"}:
+                return "intermedio"
+            if level in {"C1", "C2"}:
+                return "avanzado"
+
+        for level_key, aliases in self.config["language_levels"].items():
+            if any(self._canonicalize(alias) in normalized for alias in aliases):
+                return level_key
+
+        return None
+
     def _extract_languages_from_blocks(
-    self,
-    raw_text: str,
-    language_blocks: list[dict[str, Any]],
-    skills_blocks: list[dict[str, Any]],
-    source_type: str,
+        self,
+        raw_text: str,
+        language_blocks: list[dict[str, Any]],
+        skills_blocks: list[dict[str, Any]],
+        source_type: str,
     ):
         parsed_items = []
 
         for block in language_blocks:
-            lines = [line.strip() for line in block.get("text", "").splitlines() if line.strip()]
+            lines = [
+                line.strip()
+                for line in block.get("text", "").splitlines()
+                if line.strip()
+            ]
             for line in lines:
                 parsed = self._parse_language_line(line, source_type)
                 if parsed:
@@ -669,9 +657,8 @@ class CandidateProfileService:
                 canonical = item["canonical"]
                 if canonical not in deduped:
                     deduped[canonical] = item
-                else:
-                    if item.get("level") and not deduped[canonical].get("level"):
-                        deduped[canonical]["level"] = item["level"]
+                elif item.get("level") and not deduped[canonical].get("level"):
+                    deduped[canonical]["level"] = item["level"]
             return list(deduped.values())
 
         combined_text = raw_text + "\n" + "\n".join(
@@ -891,7 +878,7 @@ class CandidateProfileService:
             if raw not in items[canonical]["raw_values"]:
                 items[canonical]["raw_values"].append(raw)
 
-    def _looks_like_experience_title(self, text: str, full_block: str | None = None):
+    def _looks_like_experience_title(self, text: str):
         text = self._single_line(text)
         if not text:
             return False
@@ -899,15 +886,16 @@ class CandidateProfileService:
         words = text.split()
         normalized = self._canonicalize(text)
 
-        if len(words) > 6:
+        if len(words) > 8:
             return False
 
         if self._looks_like_period(text):
             return False
 
-        if ":" in text:
-            return False
         if text.endswith(".") or text.endswith(",") or text.endswith(";"):
+            return False
+
+        if ":" in text:
             return False
 
         all_section_terms = {
@@ -918,11 +906,68 @@ class CandidateProfileService:
         if normalized in all_section_terms:
             return False
 
+        stopword_count = sum(
+            1 for word in normalized.split() if word in self.STOPWORDS
+        )
+        has_strong_marker = (
+            "-" in text
+            or "–" in text
+            or "(" in text
+            or ")" in text
+        )
+
+        if (
+            stopword_count >= 3
+            and not has_strong_marker
+            and normalized.endswith((" de", " del", " la", " el", " en", " y", " con", " para"))
+        ):
+            return False
+
         return True
+
+    def _looks_like_experience_title_continuation(self, current_title: str, text: str):
+        text = self._single_line(text)
+        if not text:
+            return False
+
+        if self._looks_like_period(text):
+            return False
+
+        if text.endswith(".") or text.endswith(",") or text.endswith(";"):
+            return False
+
+        if ":" in text:
+            return False
+
+        if len(text.split()) > 6:
+            return False
+
+        current_normalized = self._canonicalize(current_title)
+
+        if current_normalized.endswith((" de", " del", " la", " el")):
+            return True
+
+        if "(" in text or ")" in text:
+            return True
+
+        if text and text[0].isupper():
+            return True
+
+        return False
 
     def _looks_like_education_degree(self, text: str):
         normalized = self._canonicalize(text)
-        return any(hint in normalized for hint in self.EDUCATION_DEGREE_HINTS)
+
+        if any(hint in normalized for hint in self.EDUCATION_DEGREE_HINTS):
+            return True
+
+        if normalized.startswith("educacion ") and len(normalized.split()) <= 4:
+            return True
+
+        if normalized.startswith("education ") and len(normalized.split()) <= 4:
+            return True
+
+        return False
 
     def _looks_like_institution(self, text: str):
         normalized = self._canonicalize(text)
@@ -937,12 +982,6 @@ class CandidateProfileService:
             or self.MONTH_RANGE_RE.search(normalized)
             or self.MONTH_YEAR_RE.search(normalized)
         )
-
-    def _find_date_line_index(self, lines: list[str]):
-        for idx, line in enumerate(lines):
-            if self._looks_like_period(line):
-                return idx
-        return None
 
     def _entry_has_content(self, entry: dict[str, Any]):
         return any(
@@ -971,29 +1010,6 @@ class CandidateProfileService:
             "level": self._clean_joined_text(entry.get("level")),
             "period": self._clean_joined_text(entry.get("period")),
         }
-
-    def _merge_fragmented_experience_entries(self, entries: list[dict[str, Any]]):
-        if not entries:
-            return []
-
-        merged = []
-
-        for entry in entries:
-            title = entry.get("title")
-            description = entry.get("description")
-            period = entry.get("period")
-            organization = entry.get("organization")
-
-            if not title and description and merged:
-                merged[-1]["description"] = self._append_text(
-                    merged[-1].get("description"),
-                    description,
-                )
-                continue
-
-            merged.append(entry)
-
-        return merged
 
     def _append_text(self, original: str | None, new_value: str | None):
         if not new_value:
@@ -1095,198 +1111,6 @@ class CandidateProfileService:
             tokens.add(token)
 
         return tokens
-
-    def _extract_experience_entries_from_blocks(self, blocks: list[dict[str, Any]]):
-        if not blocks:
-            return []
-
-        all_lines = []
-        for block in blocks:
-            lines = [line.strip() for line in block.get("text", "").splitlines() if line.strip()]
-            all_lines.extend(lines)
-
-        if not all_lines:
-            return []
-
-        entries: list[dict[str, Any]] = []
-        index = 0
-
-        while index < len(all_lines):
-            line = all_lines[index]
-
-            if not self._looks_like_experience_title(line):
-                index += 1
-                continue
-
-            title = self._single_line(line)
-            index += 1
-
-            while index < len(all_lines) and self._looks_like_experience_title_continuation(
-                title, all_lines[index]
-            ):
-                title = f"{title} {self._single_line(all_lines[index])}"
-                index += 1
-
-            period = None
-            if index < len(all_lines) and self._looks_like_period(all_lines[index]):
-                period = self._single_line(all_lines[index])
-                index += 1
-
-            description_parts = []
-
-            while index < len(all_lines):
-                next_line = all_lines[index]
-
-                if self._looks_like_experience_title(next_line):
-                    break
-
-                if period is None and self._looks_like_period(next_line):
-                    period = self._single_line(next_line)
-                    index += 1
-                    continue
-
-                description_parts.append(self._single_line(next_line))
-                index += 1
-
-            entries.append(
-                self._normalize_entry(
-                    {
-                        "title": title,
-                        "organization": None,
-                        "period": period,
-                        "description": " ".join(description_parts).strip() or None,
-                    }
-                )
-            )
-
-        return entries[:10]
-
-
-    def _looks_like_experience_title(self, text: str):
-        text = self._single_line(text)
-        if not text:
-            return False
-
-        words = text.split()
-        normalized = self._canonicalize(text)
-
-        if len(words) > 8:
-            return False
-
-        if self._looks_like_period(text):
-            return False
-
-        if text.endswith(".") or text.endswith(",") or text.endswith(";"):
-            return False
-
-        if ":" in text:
-            return False
-
-        all_section_terms = {
-            self._canonicalize(term)
-            for values in self.config["section_hints"].values()
-            for term in values
-        }
-        if normalized in all_section_terms:
-            return False
-
-        return True
-
-
-    def _looks_like_experience_title_continuation(self, current_title: str, text: str):
-        text = self._single_line(text)
-        if not text:
-            return False
-
-        if self._looks_like_period(text):
-            return False
-
-        if text.endswith(".") or text.endswith(",") or text.endswith(";"):
-            return False
-
-        if ":" in text:
-            return False
-
-        if len(text.split()) > 6:
-            return False
-
-        current_normalized = self._canonicalize(current_title)
-
-        if current_normalized.endswith((" de", " del", " la", " el")):
-            return True
-
-        if "(" in text or ")" in text:
-            return True
-
-        if text[0].isupper():
-            return True
-
-        return False
-
-
-    def _extract_education_entries_from_blocks(self, blocks: list[dict[str, Any]]):
-        if not blocks:
-            return []
-
-        all_lines = []
-        for block in blocks:
-            lines = [line.strip() for line in block.get("text", "").splitlines() if line.strip()]
-            all_lines.extend(lines)
-
-        if not all_lines:
-            return []
-
-        entries = []
-        current = None
-
-        for line in all_lines:
-            if self._looks_like_education_degree(line):
-                if current and self._education_entry_has_content(current):
-                    entries.append(self._normalize_education_entry(current))
-
-                current = {
-                    "degree": self._single_line(line),
-                    "institution": None,
-                    "level": None,
-                    "period": None,
-                }
-                continue
-
-            if current is None:
-                current = {
-                    "degree": self._single_line(line),
-                    "institution": None,
-                    "level": None,
-                    "period": None,
-                }
-                continue
-
-            if self._looks_like_institution(line) and not current.get("institution"):
-                current["institution"] = self._single_line(line)
-            elif self._looks_like_period(line) and not current.get("period"):
-                current["period"] = self._single_line(line)
-            else:
-                current["level"] = self._append_text(current.get("level"), line)
-
-        if current and self._education_entry_has_content(current):
-            entries.append(self._normalize_education_entry(current))
-
-        return entries[:10]
-
-
-    def _looks_like_education_degree(self, text: str):
-        normalized = self._canonicalize(text)
-
-        if any(hint in normalized for hint in self.EDUCATION_DEGREE_HINTS):
-            return True
-
-        if normalized.startswith("educacion ") and len(normalized.split()) <= 4:
-            return True
-
-        if normalized.startswith("education ") and len(normalized.split()) <= 4:
-            return True
-
-        return False
 
     def _is_blacklisted_term(self, value: str):
         canonical = self._canonicalize(value)
