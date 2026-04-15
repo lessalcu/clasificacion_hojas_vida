@@ -66,3 +66,25 @@ class StorageService:
         supabase = get_supabase()
         bucket = supabase.storage.from_(bucket_name)
         return bucket.remove(remote_paths)
+    
+    def upload_bytes(
+        self,
+        bucket_name: str,
+        remote_path: str,
+        file_bytes: bytes,
+        content_type: str,
+        upsert: bool = False,
+    ):
+        supabase = get_supabase()
+        return supabase.storage.from_(bucket_name).upload(
+            path=remote_path,
+            file=file_bytes,
+            file_options={
+                "content-type": content_type,
+                "upsert": str(upsert).lower(),
+            },
+        )
+
+    def download_file(self, bucket_name: str, remote_path: str) -> bytes:
+        supabase = get_supabase()
+        return supabase.storage.from_(bucket_name).download(remote_path)
