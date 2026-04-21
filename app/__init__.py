@@ -10,6 +10,8 @@ from app.api.cv_upload_routes import cv_upload_bp
 from app.api.pdf_extraction_routes import pdf_extraction_bp
 from app.api.candidate_profile_routes import candidate_profile_bp
 from app.api.pseudonymization_routes import pseudonymization_bp
+from app.api.dataset_routes import dataset_bp
+from app.api.dataset_labeling_routes import dataset_labeling_bp
 from app.config import config_by_name
 from app.errors.handlers import register_error_handlers
 from app.utils.logger import configure_logging
@@ -34,7 +36,9 @@ def create_app():
     app.register_blueprint(pdf_extraction_bp)
     app.register_blueprint(candidate_profile_bp)
     app.register_blueprint(pseudonymization_bp)
-
+    app.register_blueprint(dataset_bp)
+    app.register_blueprint(dataset_labeling_bp)
+    
     register_error_handlers(app)
 
     @app.get("/")

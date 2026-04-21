@@ -15,6 +15,16 @@ class CandidateProfileRepository:
         )
         return response.data[0] if response.data else None
 
+    def list_all(self, limit: int = 5000):
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+
     def create(self, payload: dict):
         supabase = get_supabase()
         response = supabase.table(self.table_name).insert(payload).execute()
@@ -29,3 +39,15 @@ class CandidateProfileRepository:
             .execute()
         )
         return response.data[0] if response.data else None
+
+    def get_by_candidate_id(self, candidate_id: str):
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("candidate_id", candidate_id)
+            .limit(1)
+            .execute()
+        )
+        data = response.data or []
+        return data[0] if data else None
