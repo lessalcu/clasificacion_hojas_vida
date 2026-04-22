@@ -19,6 +19,9 @@ class CvUploadService:
     def upload_single(self, file_storage):
         validated = validate_pdf_file(file_storage, self.max_size_bytes)
 
+        if hasattr(file_storage, "stream") and hasattr(file_storage.stream, "seek"):
+            file_storage.stream.seek(0)
+            
         candidate = self.candidate_repository.create({
             "source_label": "pdf_upload"
         })

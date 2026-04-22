@@ -14,16 +14,14 @@ class StorageService:
         bucket = supabase.storage.from_(bucket_name)
 
         with open(local_file_path, "rb") as file_obj:
-            file_bytes = file_obj.read()
-
-        result = bucket.upload(
-            path=remote_path,
-            file=file_bytes,
-            file_options={
-                "content-type": content_type,
-                "upsert": str(upsert).lower(),
-            },
-        )
+            result = bucket.upload(
+                path=remote_path,
+                file=file_obj,
+                file_options={
+                    "content-type": content_type,
+                    "upsert": str(upsert).lower(),
+                },
+            )
 
         return result
 
@@ -38,17 +36,16 @@ class StorageService:
         supabase = get_supabase()
         bucket = supabase.storage.from_(bucket_name)
 
-        if hasattr(file_obj, "seek"):
-            file_obj.seek(0)
+        stream = file_obj.stream if hasattr(file_obj, "stream") else file_obj
 
-        if not hasattr(file_obj, "read"):
-            raise TypeError("file_obj must be a readable file-like object")
+        if hasattr(stream, "seek"):
+            stream.seek(0)
 
-        file_bytes = file_obj.read()
+        payload = stream.read() if hasattr(stream, "read") else stream
 
         result = bucket.upload(
             path=remote_path,
-            file=file_bytes,
+            file=payload,
             file_options={
                 "content-type": content_type,
                 "upsert": str(upsert).lower(),
@@ -71,38 +68,21 @@ class StorageService:
         self,
         bucket_name: str,
         remote_path: str,
-        file_bytes: bytes,
-        content_type: str,
+        data: bytes | None = None,
+        content_type: str = "application/octet-stream",
         upsert: bool = False,
-    ):
-        supabase = get_supabase()
-        return supabase.storage.from_(bucket_name).upload(
-            path=remote_path,
-            file=file_bytes,
-            file_options={
-                "content-type": content_type,
-                "upsert": str(upsert).lower(),
-            },
-        )
-
-    def download_file(self, bucket_name: str, remote_path: str) -> bytes:
-        supabase = get_supabase()
-        return supabase.storage.from_(bucket_name).download(remote_path)
-    
-    def upload_bytes(
-        self,
-        bucket_name: str,
-        remote_path: str,
-        data: bytes,
-        content_type: str,
-        upsert: bool = False,
+        file_bytes: bytes | None = None,
     ):
         supabase = get_supabase()
         bucket = supabase.storage.from_(bucket_name)
 
+        payload = data if data is not None else file_bytes
+        if payload is None:
+            raise ValueError("upload_bytes requires 'data' or 'file_bytes'")
+
         result = bucket.upload(
             path=remote_path,
-            file=data,
+            file=payload,
             file_options={
                 "content-type": content_type,
                 "upsert": str(upsert).lower(),
@@ -110,3 +90,8 @@ class StorageService:
         )
 
         return result
+
+    def download_file(self, bucket_name: str, remote_path: str):
+        supabase = get_supabase()
+        bucket = supabase.storage.from_(bucket_name)
+        return bucket.download(remote_path)
