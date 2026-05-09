@@ -59,3 +59,19 @@ def classify_candidate_profiles(job_profile_id: str):
         ),
         200,
     )
+
+
+@model_inference_bp.get("/processing-runs/<processing_run_id>/ranking")
+def get_ranking_by_processing_run(processing_run_id: str):
+    result = service.get_ranking_by_processing_run(processing_run_id=processing_run_id)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Ranking retrieved successfully",
+                "data": result,
+            }
+        ),
+        200,
+    )
