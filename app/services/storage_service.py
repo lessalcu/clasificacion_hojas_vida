@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.services.supabase_client import get_supabase
 
 
@@ -57,16 +59,6 @@ class StorageService:
 
         return result
 
-    def list_files(self, bucket_name: str, folder: str = ""):
-        supabase = get_supabase()
-        bucket = supabase.storage.from_(bucket_name)
-        return bucket.list(folder)
-
-    def remove_files(self, bucket_name: str, remote_paths: list[str]):
-        supabase = get_supabase()
-        bucket = supabase.storage.from_(bucket_name)
-        return bucket.remove(remote_paths)
-    
     def upload_bytes(
         self,
         bucket_name: str,
@@ -76,7 +68,9 @@ class StorageService:
         upsert: bool = False,
     ):
         supabase = get_supabase()
-        return supabase.storage.from_(bucket_name).upload(
+        bucket = supabase.storage.from_(bucket_name)
+
+        result = bucket.upload(
             path=remote_path,
             file=file_bytes,
             file_options={
@@ -85,6 +79,36 @@ class StorageService:
             },
         )
 
-    def download_file(self, bucket_name: str, remote_path: str) -> bytes:
+        return result
+
+    def download_file(
+        self,
+        bucket_name: str,
+        remote_path: str,
+        local_file_path: str | None = None,
+    ) -> bytes | str:
         supabase = get_supabase()
-        return supabase.storage.from_(bucket_name).download(remote_path)
+        bucket = supabase.storage.from_(bucket_name)
+
+        file_bytes = bucket.download(remote_path)
+
+        if local_file_path:
+            target_path = Path(local_file_path)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(target_path, "wb") as file_obj:
+                file_obj.write(file_bytes)
+
+            return str(target_path)
+
+        return file_bytes
+
+    def list_files(self, bucket_name: str, folder: str = ""):
+        supabase = get_supabase()
+        bucket = supabase.storage.from_(bucket_name)
+        return bucket.list(folder)
+
+    def remove_files(self, bucket_name: str, remote_paths: list[str]):
+        supabase = get_supabase()
+        bucket = supabase.storage.from_(bucket_name)
+        return bucket.remove(remote_paths)

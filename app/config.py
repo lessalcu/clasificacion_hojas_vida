@@ -7,10 +7,12 @@ load_dotenv()
 
 def _get_tuple_env(name: str, default: tuple[int, int]) -> tuple[int, int]:
     raw_value = os.getenv(name)
+
     if not raw_value:
         return default
 
     parts = [part.strip() for part in raw_value.split(",")]
+
     if len(parts) != 2:
         return default
 
@@ -22,7 +24,23 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     if raw_value is None:
         return default
 
-    return raw_value.strip().lower() in ("true", "1", "yes", "y", "si", "sí")
+    return raw_value.strip().lower() in (
+        "true",
+        "1",
+        "yes",
+        "y",
+        "si",
+        "sí",
+    )
+
+
+def _get_list_env(name: str, default: list[str]) -> list[str]:
+    raw_value = os.getenv(name)
+
+    if not raw_value:
+        return default
+
+    return [item.strip().lower() for item in raw_value.split(",") if item.strip()]
 
 
 class Config:
@@ -66,8 +84,34 @@ class Config:
     DATASET_AUTO_LABEL_STRATEGY = os.getenv("DATASET_AUTO_LABEL_STRATEGY", "relative")
     DATASET_POSITIVE_RATIO = float(os.getenv("DATASET_POSITIVE_RATIO", 0.35))
     DATASET_MATCH_THRESHOLD = float(os.getenv("DATASET_MATCH_THRESHOLD", 0.55))
+
     CROSS_VALIDATION_ENABLED = _get_bool_env("CROSS_VALIDATION_ENABLED", True)
     CROSS_VALIDATION_FOLDS = int(os.getenv("CROSS_VALIDATION_FOLDS", 5))
+
+    RETRAIN_NEW_SAMPLES_THRESHOLD = int(os.getenv("RETRAIN_NEW_SAMPLES_THRESHOLD", 10))
+    RETRAIN_MIN_TOTAL_SAMPLES = int(os.getenv("RETRAIN_MIN_TOTAL_SAMPLES", 30))
+    DEVELOPER_PROFILE_KEYWORDS = _get_list_env(
+        "DEVELOPER_PROFILE_KEYWORDS",
+        [
+            "desarrollador",
+            "developer",
+            "software",
+            "backend",
+            "frontend",
+            "full stack",
+            "python",
+        ],
+    )
+
+    AUTO_RETRAIN_ENABLED = _get_bool_env("AUTO_RETRAIN_ENABLED", True)
+    AUTO_RETRAIN_NEW_PROFILES_THRESHOLD = int(
+        os.getenv("AUTO_RETRAIN_NEW_PROFILES_THRESHOLD", 25)
+    )
+    AUTO_RETRAIN_MIN_THRESHOLD = int(os.getenv("AUTO_RETRAIN_MIN_THRESHOLD", 25))
+    INFERENCE_MODEL_CACHE_DIR = os.getenv(
+        "INFERENCE_MODEL_CACHE_DIR",
+        "artifacts/inference_cache",
+    )
 
 
 class DevelopmentConfig(Config):
