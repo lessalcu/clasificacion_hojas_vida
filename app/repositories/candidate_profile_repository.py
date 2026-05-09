@@ -12,7 +12,20 @@ class CandidateProfileRepository:
     def update(self, item_id: str, payload: dict) -> dict | None:
         supabase = get_supabase()
         response = (
-            supabase.table(self.table_name).update(payload).eq("id", item_id).execute()
+            supabase.table(self.table_name)
+            .update(payload)
+            .eq("id", item_id)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+
+    def update_by_source_id(self, source_id: str, payload: dict) -> dict | None:
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .update(payload)
+            .eq("source_id", source_id)
+            .execute()
         )
         return response.data[0] if response.data else None
 
@@ -27,19 +40,38 @@ class CandidateProfileRepository:
         )
         return response.data[0] if response.data else None
 
+    def get_by_source_id(self, source_id: str) -> dict | None:
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("source_id", source_id)
+            .limit(1)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+
     def get_by_ids(self, item_ids: list[str]) -> list[dict]:
         if not item_ids:
             return []
 
         supabase = get_supabase()
         response = (
-            supabase.table(self.table_name).select("*").in_("id", item_ids).execute()
+            supabase.table(self.table_name)
+            .select("*")
+            .in_("id", item_ids)
+            .execute()
         )
         return response.data or []
 
     def get_profiles_for_dataset(self, limit: int = 500) -> list[dict]:
         supabase = get_supabase()
-        response = supabase.table(self.table_name).select("*").limit(limit).execute()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .limit(limit)
+            .execute()
+        )
 
         profiles = response.data or []
 
