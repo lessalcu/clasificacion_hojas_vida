@@ -23,7 +23,7 @@ print(created)
 if not created:
     raise Exception("Insert failed")
 
-created_id = created[0]["id"]
+created_id = created["id"]
 
 print("2. SELECT BY ID")
 selected = service.get_job_profile_by_id(created_id)
