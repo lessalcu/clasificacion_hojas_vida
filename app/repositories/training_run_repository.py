@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from app.services.supabase_client import get_supabase
 
 
@@ -8,6 +10,69 @@ class TrainingRunRepository:
         supabase = get_supabase()
         response = supabase.table(self.table_name).insert(payload).execute()
         return self._normalize_response(response.data)
+
+    def get_by_id(self, item_id: str) -> dict | None:
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("id", item_id)
+            .limit(1)
+            .execute()
+        )
+        return self._normalize_response(response.data)
+
+    def list_by_job_profile(self, job_profile_id: str) -> list[dict]:
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("job_profile_id", job_profile_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data or []
+
+    def get_latest_by_job_profile(self, job_profile_id: str) -> dict | None:
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("job_profile_id", job_profile_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return self._normalize_response(response.data)
+
+    def mark_selected_by_model_version(
+        self,
+        job_profile_id: str,
+        model_version_id: str,
+    ) -> list[dict]:
+        supabase = get_supabase()
+
+        supabase.table(self.table_name).update(
+            {
+                "is_selected": False,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        ).eq("job_profile_id", job_profile_id).execute()
+
+        response = (
+            supabase.table(self.table_name)
+            .update(
+                {
+                    "is_selected": True,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            .eq("job_profile_id", job_profile_id)
+            .eq("model_version_id", model_version_id)
+            .execute()
+        )
+
+        return response.data or []
 
     @staticmethod
     def _normalize_response(data):
