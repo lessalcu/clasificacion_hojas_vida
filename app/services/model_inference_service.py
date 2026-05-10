@@ -3,8 +3,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from sklearn.metrics.pairwise import cosine_similarity
+
 from app.errors.exceptions import NotFoundError, ValidationError
-from app.machine_learning.common.utils import build_training_text
+from app.machine_learning.common.utils import (
+    build_candidate_text,
+    build_job_profile_text,
+    build_training_text,
+)
 from app.repositories.candidate_profile_repository import CandidateProfileRepository
 from app.repositories.classification_result_repository import (
     ClassificationResultRepository,
@@ -14,13 +20,7 @@ from app.repositories.processing_run_repository import ProcessingRunRepository
 from app.services.auto_training_service import AutoTrainingService
 from app.services.model_artifact_loader_service import ModelArtifactLoaderService
 from app.services.model_versioning_service import ModelVersioningService
-from sklearn.metrics.pairwise import cosine_similarity
-
-from app.machine_learning.common.utils import (
-    build_candidate_text,
-    build_job_profile_text,
-    build_training_text,
-)
+from app.services.ranking_service import RankingService
 
 
 class ModelInferenceService:
@@ -32,6 +32,7 @@ class ModelInferenceService:
         self.model_versioning_service = ModelVersioningService()
         self.model_artifact_loader_service = ModelArtifactLoaderService()
         self.auto_training_service = AutoTrainingService()
+        self.ranking_service = RankingService()
 
     def classify_candidate_profile(
         self,
@@ -129,6 +130,7 @@ class ModelInferenceService:
                             "candidate_profile_id": candidate_profile_id,
                             "error": "candidate_profile not found",
                             "predicted_label": None,
+                            "raw_score_0_100": 0,
                             "score_0_100": 0,
                         }
                     )
@@ -142,6 +144,7 @@ class ModelInferenceService:
                             "candidate_profile_id": candidate_profile_id,
                             "error": "candidate profile has empty text",
                             "predicted_label": None,
+                            "raw_score_0_100": 0,
                             "score_0_100": 0,
                         }
                     )
@@ -149,6 +152,7 @@ class ModelInferenceService:
 
                 X = vectorizer.transform([inference_text])
                 prediction = estimator.predict(X)[0]
+
                 score_detail = self._calculate_score_detail(
                     estimator=estimator,
                     X=X,
@@ -158,15 +162,15 @@ class ModelInferenceService:
                     candidate_profile=candidate_profile,
                 )
 
-                score = score_detail["final_score_0_100"]
-
+                raw_score = score_detail["final_score_0_100"]
                 predicted_label = bool(int(prediction))
 
                 raw_results.append(
                     {
                         "candidate_profile_id": candidate_profile_id,
                         "predicted_label": predicted_label,
-                        "score_0_100": score,
+                        "raw_score_0_100": raw_score,
+                        "score_0_100": raw_score,
                         "score_detail": score_detail,
                         "model_version_id": active_model["id"],
                         "algorithm": active_model.get("algorithm"),
@@ -176,17 +180,11 @@ class ModelInferenceService:
                     }
                 )
 
-            sorted_results = sorted(
-                raw_results,
-                key=lambda item: item.get("score_0_100") or 0,
-                reverse=True,
-            )
+            ranked_results = self.ranking_service.generate_ranking(raw_results)
 
             persisted_results = []
 
-            for index, item in enumerate(sorted_results, start=1):
-                item["rank_position"] = index
-
+            for item in ranked_results:
                 if persist_result and processing_run and not item.get("error"):
                     persisted = self.classification_result_repository.create(
                         {
@@ -196,7 +194,7 @@ class ModelInferenceService:
                             "created_by": created_by,
                             "predicted_label": item["predicted_label"],
                             "score_0_100": item["score_0_100"],
-                            "rank_position": index,
+                            "rank_position": item["rank_position"],
                             "match_summary": {
                                 "job_profile_id": job_profile_id,
                                 "job_profile_title": job_profile.get("title"),
@@ -217,6 +215,7 @@ class ModelInferenceService:
                                     ),
                                 },
                                 "score_detail": item.get("score_detail"),
+                                "ranking_detail": item.get("ranking_detail"),
                             },
                         }
                     )
@@ -224,7 +223,9 @@ class ModelInferenceService:
                     item["classification_result_id"] = (
                         persisted.get("id") if persisted else None
                     )
-                    persisted_results.append(persisted)
+
+                    if persisted:
+                        persisted_results.append(persisted)
 
             if persist_result and processing_run:
                 self.processing_run_repository.update(
@@ -252,7 +253,7 @@ class ModelInferenceService:
                 ),
                 "auto_training_result": auto_training_result,
                 "total_candidates": len(candidate_profile_ids),
-                "results": sorted_results,
+                "results": ranked_results,
                 "persisted_results": persisted_results,
             }
 
@@ -266,7 +267,13 @@ class ModelInferenceService:
                         "error_message": str(exc),
                     },
                 )
+
             raise
+
+    def get_ranking_by_processing_run(self, processing_run_id: str) -> list[dict]:
+        return self.classification_result_repository.list_by_processing_run(
+            processing_run_id
+        )
 
     @staticmethod
     def _calculate_score_detail(
@@ -314,4 +321,5 @@ class ModelInferenceService:
             "text_similarity_score_0_100": text_similarity_score,
             "final_score_0_100": final_score,
             "score_formula": "70% modelo + 30% similitud textual",
+            "score_type": "raw_hybrid_score_before_ranking_normalization",
         }
