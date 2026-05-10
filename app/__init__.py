@@ -18,6 +18,7 @@ from app.api.pdf_extraction_routes import pdf_extraction_bp
 from app.config import config_by_name
 from app.errors.handlers import register_error_handlers
 from app.utils.logger import configure_logging
+from app.api.report_routes import report_bp
 
 
 def create_app():
@@ -44,6 +45,7 @@ def create_app():
     app.register_blueprint(model_version_bp)
     app.register_blueprint(model_inference_bp)
     app.register_blueprint(auto_training_bp)
+    app.register_blueprint(report_bp)
 
     register_error_handlers(app)
 
