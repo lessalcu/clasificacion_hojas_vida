@@ -1,23 +1,12 @@
-from datetime import UTC, datetime
-
 from app.services.supabase_client import get_supabase
 
 
-class ProcessingRunRepository:
-    table_name = "processing_run"
+class ExecutionReportRepository:
+    table_name = "execution_report"
 
     def create(self, payload: dict) -> dict | None:
         supabase = get_supabase()
         response = supabase.table(self.table_name).insert(payload).execute()
-        return self._normalize_response(response.data)
-
-    def update(self, item_id: str, payload: dict) -> dict | None:
-        supabase = get_supabase()
-        payload["updated_at"] = datetime.now(UTC).isoformat()
-
-        response = (
-            supabase.table(self.table_name).update(payload).eq("id", item_id).execute()
-        )
         return self._normalize_response(response.data)
 
     def get_by_id(self, item_id: str) -> dict | None:
@@ -30,6 +19,17 @@ class ProcessingRunRepository:
             .execute()
         )
         return self._normalize_response(response.data)
+
+    def list_by_processing_run(self, processing_run_id: str) -> list[dict]:
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("processing_run_id", processing_run_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data or []
 
     def list_by_job_profile(self, job_profile_id: str, limit: int = 100) -> list[dict]:
         supabase = get_supabase()
