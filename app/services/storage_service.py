@@ -53,6 +53,27 @@ class StorageService:
         )
 
         return result
+    
+    def upload_json(
+        self,
+        bucket_name: str,
+        remote_path: str,
+        payload: dict,
+        upsert: bool = True,
+    ):
+        import io
+        import json
+
+        json_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        file_obj = io.BytesIO(json_bytes)
+
+        return self.upload_fileobj(
+            bucket_name=bucket_name,
+            remote_path=remote_path,
+            file_obj=file_obj,
+            content_type="application/json",
+            upsert=upsert,
+        )
 
     def list_files(self, bucket_name: str, folder: str = ""):
         supabase = get_supabase()

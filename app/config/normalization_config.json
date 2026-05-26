@@ -444,5 +444,105 @@
     "oe ",
     "s ",
     "y "
-  ]
+  ],
+
+
+  
+  "standard_cv": {
+  "enabled": true,
+  "required_sections": [
+    "contact",
+    "summary",
+    "education",
+    "experience",
+    "skills",
+    "languages"
+  ],
+  "optional_sections": [
+    "courses",
+    "references"
+  ],
+  "section_order": [
+    "contact",
+    "summary",
+    "education",
+    "experience",
+    "skills",
+    "languages",
+    "courses",
+    "references"
+  ],
+  "section_headers": {
+    "contact": [
+      "datos personales",
+      "datos de contacto",
+      "informacion personal",
+      "información personal",
+      "contacto",
+      "contact information"
+    ],
+    "summary": [
+      "perfil",
+      "perfil profesional",
+      "perfil personal",
+      "resumen",
+      "resumen profesional",
+      "objetivo",
+      "objetivo profesional",
+      "sobre mi",
+      "sobre mí",
+      "about me",
+      "summary"
+    ],
+    "education": [
+      "formacion academica",
+      "formación académica",
+      "educacion",
+      "educación",
+      "estudios",
+      "academic background",
+      "education"
+    ],
+    "experience": [
+      "experiencia laboral",
+      "experiencia profesional",
+      "experiencia",
+      "work experience",
+      "professional experience"
+    ],
+    "skills": [
+      "habilidades y tecnologias",
+      "habilidades y tecnologías",
+      "habilidades",
+      "conocimientos y habilidades",
+      "conocimientos",
+      "skills",
+      "technical skills",
+      "herramientas"
+    ],
+    "languages": [
+      "idiomas",
+      "idioma",
+      "idioma extranjero",
+      "languages",
+      "language"
+    ],
+    "courses": [
+      "cursos",
+      "certificaciones",
+      "certificados",
+      "courses",
+      "certifications"
+    ],
+    "references": [
+      "referencias",
+      "referencia laboral",
+      "referencias laborales",
+      "referencias personales",
+      "references"
+    ]
+  },
+  "max_pages": 3,
+  "reject_if_missing_required": true
+}
 }
