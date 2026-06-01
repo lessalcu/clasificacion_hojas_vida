@@ -45,17 +45,32 @@ class TrainingRunRepository:
         )
         return self._normalize_response(response.data)
 
+    def get_by_model_version_ids(self, model_version_ids: list[str]) -> list[dict]:
+        if not model_version_ids:
+            return []
+
+        supabase = get_supabase()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .in_("model_version_id", model_version_ids)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data or []
+
     def mark_selected_by_model_version(
         self,
         job_profile_id: str,
         model_version_id: str,
     ) -> list[dict]:
         supabase = get_supabase()
+        now = datetime.now(UTC).isoformat()
 
         supabase.table(self.table_name).update(
             {
                 "is_selected": False,
-                "updated_at": datetime.now(UTC).isoformat(),
+                "updated_at": now,
             }
         ).eq("job_profile_id", job_profile_id).execute()
 
@@ -64,7 +79,7 @@ class TrainingRunRepository:
             .update(
                 {
                     "is_selected": True,
-                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_at": now,
                 }
             )
             .eq("job_profile_id", job_profile_id)
