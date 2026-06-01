@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.errors.exceptions import ValidationError
+
 
 class RankingService:
     def generate_ranking(self, results: list[dict]) -> list[dict]:
@@ -25,6 +27,36 @@ class RankingService:
             item.pop("_input_order", None)
 
         return ranked_results
+
+    def limit_ranking(
+        self,
+        ranked_results: list[dict],
+        top_k: int | str | None = None,
+    ) -> list[dict]:
+        normalized_top_k = self.normalize_top_k(top_k)
+
+        if normalized_top_k is None:
+            return ranked_results
+
+        return ranked_results[:normalized_top_k]
+
+    @staticmethod
+    def normalize_top_k(top_k: int | str | None = None) -> int | None:
+        if top_k is None or top_k == "":
+            return None
+
+        try:
+            normalized_top_k = int(top_k)
+        except (TypeError, ValueError):
+            raise ValidationError("top_k debe ser un número entero válido")
+
+        if normalized_top_k <= 0:
+            raise ValidationError("top_k debe ser mayor a 0")
+
+        if normalized_top_k > 100:
+            raise ValidationError("top_k no puede ser mayor a 100")
+
+        return normalized_top_k
 
     def _prepare_item(self, item: dict, input_order: int) -> dict:
         prepared = dict(item)

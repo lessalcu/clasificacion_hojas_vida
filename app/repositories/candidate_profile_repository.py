@@ -60,17 +60,16 @@ class CandidateProfileRepository:
 
     def get_profiles_for_dataset(self, limit: int = 500) -> list[dict]:
         supabase = get_supabase()
-        response = supabase.table(self.table_name).select("*").limit(limit).execute()
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
 
         profiles = response.data or []
-
-        valid_profiles = []
-
-        for profile in profiles:
-            if self._is_valid_profile(profile):
-                valid_profiles.append(profile)
-
-        return valid_profiles
+        return [profile for profile in profiles if self._is_valid_profile(profile)]
 
     def get_valid_profiles_created_after(
         self,
@@ -92,13 +91,7 @@ class CandidateProfileRepository:
         response = query.execute()
         profiles = response.data or []
 
-        valid_profiles = []
-
-        for profile in profiles:
-            if self._is_valid_profile(profile):
-                valid_profiles.append(profile)
-
-        return valid_profiles
+        return [profile for profile in profiles if self._is_valid_profile(profile)]
 
     def count_valid_profiles_created_after(
         self,
@@ -111,6 +104,23 @@ class CandidateProfileRepository:
         )
 
         return len(profiles)
+
+    def list_valid_for_inference(self, limit: int = 1000) -> list[dict]:
+        if limit <= 0:
+            return []
+
+        supabase = get_supabase()
+
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+        profiles = response.data or []
+        return [profile for profile in profiles if self._is_valid_profile(profile)]
 
     @staticmethod
     def _is_valid_profile(profile: dict) -> bool:

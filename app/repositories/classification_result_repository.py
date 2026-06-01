@@ -17,16 +17,29 @@ class ClassificationResultRepository:
         response = supabase.table(self.table_name).insert(payloads).execute()
         return response.data or []
 
-    def list_by_processing_run(self, processing_run_id: str) -> list[dict]:
+    def list_by_processing_run(
+        self,
+        processing_run_id: str,
+        limit: int | None = None,
+    ) -> list[dict]:
         supabase = get_supabase()
-        response = (
+
+        query = (
             supabase.table(self.table_name)
             .select("*")
             .eq("processing_run_id", processing_run_id)
             .order("rank_position", desc=False)
-            .execute()
         )
+
+        if limit is not None and limit > 0:
+            query = query.limit(limit)
+
+        response = query.execute()
         return response.data or []
+
+    def count_by_processing_run(self, processing_run_id: str) -> int:
+        results = self.list_by_processing_run(processing_run_id=processing_run_id)
+        return len(results)
 
     @staticmethod
     def _normalize_response(data):

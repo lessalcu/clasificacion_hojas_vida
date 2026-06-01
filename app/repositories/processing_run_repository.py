@@ -43,6 +43,28 @@ class ProcessingRunRepository:
         )
         return response.data or []
 
+    def list_completed_rank_all(
+        self,
+        job_profile_id: str,
+        model_version_id: str,
+        limit: int = 20,
+    ) -> list[dict]:
+        supabase = get_supabase()
+
+        response = (
+            supabase.table(self.table_name)
+            .select("*")
+            .eq("job_profile_id", job_profile_id)
+            .eq("model_version_id", model_version_id)
+            .eq("input_type", "rank_all")
+            .eq("status", "completed")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+        return response.data or []
+
     @staticmethod
     def _normalize_response(data):
         if isinstance(data, list):
