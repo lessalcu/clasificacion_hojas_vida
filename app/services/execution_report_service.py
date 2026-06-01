@@ -10,15 +10,22 @@ from flask import current_app
 
 from app.errors.exceptions import NotFoundError, ValidationError
 from app.repositories.candidate_profile_repository import CandidateProfileRepository
-
+from app.repositories.classification_result_repository import (
+    ClassificationResultRepository,
+)
+from app.repositories.execution_report_repository import ExecutionReportRepository
 from app.repositories.job_profile_repository import JobProfileRepository
 from app.repositories.model_version_repository import ModelVersionRepository
+from app.repositories.processing_run_repository import ProcessingRunRepository
 from app.repositories.training_run_repository import TrainingRunRepository
 from app.services.storage_service import StorageService
 
 
 class ExecutionReportService:
     def __init__(self):
+        self.processing_run_repository = ProcessingRunRepository()
+        self.classification_result_repository = ClassificationResultRepository()
+        self.execution_report_repository = ExecutionReportRepository()
         self.job_profile_repository = JobProfileRepository()
         self.model_version_repository = ModelVersionRepository()
         self.training_run_repository = TrainingRunRepository()
@@ -146,6 +153,7 @@ class ExecutionReportService:
             "processing_run": processing_run,
             "job_profile": job_profile,
             "active_model": active_model,
+            "model_version": active_model,
             "model_benchmark": model_benchmark,
             "results": enriched_results,
             "generated_at": datetime.now(UTC).isoformat(),

@@ -17,7 +17,10 @@ class ModelVersionRepository:
         payload["updated_at"] = datetime.now(UTC).isoformat()
 
         response = (
-            supabase.table(self.table_name).update(payload).eq("id", item_id).execute()
+            supabase.table(self.table_name)
+            .update(payload)
+            .eq("id", item_id)
+            .execute()
         )
         return self._normalize_response(response.data)
 
@@ -72,11 +75,15 @@ class ModelVersionRepository:
         )
         return self._normalize_response(response.data)
 
-    def archive_active_by_job_profile(self, job_profile_id: str) -> list[dict]:
+    def archive_active_by_job_profile(
+        self,
+        job_profile_id: str,
+        exclude_model_version_id: str | None = None,
+    ) -> list[dict]:
         supabase = get_supabase()
         now = datetime.now(UTC).isoformat()
 
-        response = (
+        query = (
             supabase.table(self.table_name)
             .update(
                 {
@@ -87,8 +94,12 @@ class ModelVersionRepository:
             )
             .eq("job_profile_id", job_profile_id)
             .in_("status", ["active", "selected"])
-            .execute()
         )
+
+        if exclude_model_version_id:
+            query = query.neq("id", exclude_model_version_id)
+
+        response = query.execute()
         return response.data or []
 
     def mark_as_active(
