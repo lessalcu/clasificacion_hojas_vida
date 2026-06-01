@@ -20,6 +20,63 @@ from app.services.text_cleaning_service import TextCleaningService
 
 
 class DatasetBuilderService:
+    TERM_ALIASES = {
+        "python": {"python", "py", "flask", "fastapi", "fast api", "django"},
+        "flask": {"flask"},
+        "fastapi": {"fastapi", "fast api"},
+        "django": {"django"},
+        "apis rest": {"api", "apis", "rest", "api rest", "apis rest"},
+        "api rest": {"api", "apis", "rest", "api rest", "apis rest"},
+        "backend": {
+            "backend",
+            "back-end",
+            "back end",
+            "api",
+            "rest",
+            "microservicio",
+            "microservicios",
+        },
+        "back-end": {"backend", "back-end", "back end", "api", "rest"},
+        "postgresql": {"postgresql", "postgres", "sql"},
+        "postgres": {"postgresql", "postgres", "sql"},
+        "sql": {"sql", "postgresql", "postgres", "mysql", "sql server"},
+        "supabase": {"supabase", "postgresql", "postgres"},
+        "docker": {"docker", "contenedor", "contenedores", "containers"},
+        "frontend": {"frontend", "front-end", "front end", "react", "angular", "vue"},
+        "full stack": {"full stack", "fullstack", "backend", "frontend"},
+        "java": {"java", "spring", "spring boot"},
+        "spring boot": {"spring boot", "spring", "java"},
+        "javascript": {"javascript", "js", "node", "nodejs", "node.js"},
+        "typescript": {"typescript", "ts"},
+        "react": {"react", "reactjs", "react.js"},
+        "node": {"node", "nodejs", "node.js", "javascript"},
+    }
+
+    STOPWORDS = {
+        "de",
+        "del",
+        "la",
+        "el",
+        "los",
+        "las",
+        "para",
+        "por",
+        "con",
+        "en",
+        "un",
+        "una",
+        "y",
+        "o",
+        "a",
+        "al",
+        "developer",
+        "desarrollador",
+        "desarrollo",
+        "perfil",
+        "puesto",
+        "vacante",
+    }
+
     def __init__(self):
         self.job_profile_repository = JobProfileRepository()
         self.candidate_profile_repository = CandidateProfileRepository()
@@ -47,9 +104,15 @@ class DatasetBuilderService:
         label_strategy = (
             label_strategy or current_app.config["DATASET_AUTO_LABEL_STRATEGY"]
         )
-        positive_ratio = positive_ratio or current_app.config["DATASET_POSITIVE_RATIO"]
+        positive_ratio = (
+            positive_ratio
+            if positive_ratio is not None
+            else current_app.config["DATASET_POSITIVE_RATIO"]
+        )
         match_threshold = (
-            match_threshold or current_app.config["DATASET_MATCH_THRESHOLD"]
+            match_threshold
+            if match_threshold is not None
+            else current_app.config["DATASET_MATCH_THRESHOLD"]
         )
 
         candidate_profiles = self.candidate_profile_repository.get_profiles_for_dataset(
@@ -77,9 +140,10 @@ class DatasetBuilderService:
             ):
                 continue
 
-            job_text = build_job_profile_text(job_profile)
-            score = self._calculate_match_score(
-                job_profile, candidate_profile, candidate_text
+            score_detail = self._calculate_match_score_detail(
+                job_profile=job_profile,
+                candidate_profile=candidate_profile,
+                candidate_text=candidate_text,
             )
 
             scored_profiles.append(
@@ -87,8 +151,9 @@ class DatasetBuilderService:
                     "candidate_profile": candidate_profile,
                     "candidate_profile_id": candidate_profile_id,
                     "candidate_text": candidate_text,
-                    "job_text": job_text,
-                    "match_score": score,
+                    "job_text": build_job_profile_text(job_profile),
+                    "match_score": score_detail["final_score"],
+                    "rubric": score_detail,
                 }
             )
 
@@ -126,6 +191,7 @@ class DatasetBuilderService:
                 "job_profile_id": job_profile_id,
                 "created_by": created_by,
                 "label": label,
+                "label_reason": item.get("label_reason"),
                 "split_name": split_name,
                 "source_type": source_type,
                 "match_score": round(float(item["match_score"]), 4),
@@ -133,10 +199,8 @@ class DatasetBuilderService:
                 "quality_status": "ready",
                 "dataset_version": dataset_version,
                 "auto_generated": True,
-                "notes": (
-                    "Registro generado automáticamente desde candidate_profile "
-                    "para habilitar entrenamiento inicial."
-                ),
+                "rubric": item.get("rubric") or {},
+                "notes": None,
                 "updated_at": datetime.now(UTC).isoformat(),
             }
 
@@ -215,13 +279,56 @@ class DatasetBuilderService:
         positive_ratio: float,
         match_threshold: float,
     ) -> list[dict[str, Any]]:
+        strategy = (strategy or "hybrid").lower().strip()
+
         if strategy == "threshold":
             for item in scored_profiles:
                 item["label"] = item["match_score"] >= match_threshold
+                item["label_reason"] = (
+                    "threshold_positive" if item["label"] else "threshold_negative"
+                )
 
             if self._has_both_classes(scored_profiles):
                 return scored_profiles
 
+        if strategy in ("rule", "rules", "rule_based"):
+            for item in scored_profiles:
+                item["label"] = bool(item.get("rubric", {}).get("rule_positive"))
+                item["label_reason"] = (
+                    "rule_positive" if item["label"] else "rule_negative"
+                )
+
+            if self._has_both_classes(scored_profiles):
+                return scored_profiles
+
+        if strategy == "hybrid":
+            for item in scored_profiles:
+                rule_positive = bool(item.get("rubric", {}).get("rule_positive"))
+                threshold_positive = item["match_score"] >= match_threshold
+
+                item["label"] = rule_positive or threshold_positive
+                item["label_reason"] = (
+                    "hybrid_positive" if item["label"] else "hybrid_negative"
+                )
+
+            positive_rate = self._positive_rate(scored_profiles)
+
+            if (
+                self._has_both_classes(scored_profiles)
+                and 0.15 <= positive_rate <= 0.65
+            ):
+                return scored_profiles
+
+        return self._assign_relative_labels(
+            scored_profiles=scored_profiles,
+            positive_ratio=positive_ratio,
+        )
+
+    @staticmethod
+    def _assign_relative_labels(
+        scored_profiles: list[dict[str, Any]],
+        positive_ratio: float,
+    ) -> list[dict[str, Any]]:
         sorted_profiles = sorted(
             scored_profiles,
             key=lambda item: item["match_score"],
@@ -239,20 +346,31 @@ class DatasetBuilderService:
 
         for item in sorted_profiles:
             item["label"] = item["candidate_profile_id"] in positive_ids
+            item["label_reason"] = (
+                "relative_top_ratio" if item["label"] else "relative_outside_ratio"
+            )
 
         return sorted_profiles
+
+    @staticmethod
+    def _positive_rate(items: list[dict[str, Any]]) -> float:
+        if not items:
+            return 0.0
+
+        positives = sum(1 for item in items if bool(item.get("label")))
+        return positives / len(items)
 
     @staticmethod
     def _has_both_classes(items: list[dict[str, Any]]) -> bool:
         labels = {bool(item.get("label")) for item in items}
         return labels == {True, False}
 
-    def _calculate_match_score(
+    def _calculate_match_score_detail(
         self,
         job_profile: dict,
         candidate_profile: dict,
         candidate_text: str,
-    ) -> float:
+    ) -> dict[str, Any]:
         required_skills = self._normalize_terms(job_profile.get("required_skills"))
         technologies = self._normalize_terms(job_profile.get("technologies"))
         languages = self._normalize_terms(job_profile.get("languages"))
@@ -262,36 +380,92 @@ class DatasetBuilderService:
             candidate_profile.get("technologies")
         )
         candidate_languages = self._normalize_terms(candidate_profile.get("languages"))
+        candidate_keywords = self._normalize_terms(candidate_profile.get("keywords"))
+
+        title_terms = self._filter_relevant_terms(
+            self._tokenize(str(job_profile.get("title") or ""))
+        )
+        description_terms = self._filter_relevant_terms(
+            self._tokenize(str(job_profile.get("description") or ""))
+        )
+
+        job_general_terms = title_terms | description_terms
 
         candidate_tokens = self._tokenize(candidate_text)
 
-        skill_score = self._overlap_score(
-            required_skills, candidate_skills | candidate_tokens
-        )
-        technology_score = self._overlap_score(
-            technologies,
-            candidate_technologies | candidate_tokens,
-        )
-        language_score = self._overlap_score(
-            languages, candidate_languages | candidate_tokens
+        candidate_terms = (
+            candidate_skills
+            | candidate_technologies
+            | candidate_languages
+            | candidate_keywords
+            | candidate_tokens
         )
 
-        title_terms = self._tokenize(str(job_profile.get("title") or ""))
-        description_terms = self._tokenize(str(job_profile.get("description") or ""))
-        job_general_terms = title_terms | description_terms
-        general_text_score = self._overlap_score(job_general_terms, candidate_tokens)
+        candidate_terms = self._expand_terms(candidate_terms)
+
+        skill_score = self._overlap_score(required_skills, candidate_terms)
+        technology_score = self._overlap_score(technologies, candidate_terms)
+        language_score = self._overlap_score(languages, candidate_terms)
+        general_text_score = self._overlap_score(job_general_terms, candidate_terms)
+
+        matched_skills = self._matched_terms(required_skills, candidate_terms)
+        matched_technologies = self._matched_terms(technologies, candidate_terms)
+        matched_languages = self._matched_terms(languages, candidate_terms)
+        matched_general_terms = self._matched_terms(job_general_terms, candidate_terms)
+
+        rule_score = (
+            len(matched_skills) * 2.0
+            + len(matched_technologies) * 1.5
+            + len(matched_general_terms) * 0.5
+            + len(matched_languages) * 0.2
+        )
+
+        expected_weight = (
+            len(required_skills) * 2.0
+            + len(technologies) * 1.5
+            + len(job_general_terms) * 0.5
+            + len(languages) * 0.2
+        )
+
+        rule_score_normalized = (
+            rule_score / expected_weight if expected_weight > 0 else 0.0
+        )
 
         final_score = (
-            skill_score * 0.45
-            + technology_score * 0.35
+            skill_score * 0.40
+            + technology_score * 0.30
             + language_score * 0.05
             + general_text_score * 0.15
+            + rule_score_normalized * 0.10
         )
 
-        return max(0.0, min(1.0, final_score))
+        final_score = max(0.0, min(1.0, final_score))
 
-    @staticmethod
-    def _normalize_terms(value: Any) -> set[str]:
+        required_hits = len(matched_skills) + len(matched_technologies)
+
+        rule_positive = (
+            rule_score >= 4.0
+            or (len(matched_skills) >= 1 and required_hits >= 2 and final_score >= 0.25)
+            or final_score >= 0.45
+        )
+
+        return {
+            "final_score": round(final_score, 4),
+            "skill_score": round(skill_score, 4),
+            "technology_score": round(technology_score, 4),
+            "language_score": round(language_score, 4),
+            "general_text_score": round(general_text_score, 4),
+            "rule_score": round(rule_score, 4),
+            "rule_score_normalized": round(rule_score_normalized, 4),
+            "rule_positive": rule_positive,
+            "matched_skills": sorted(matched_skills),
+            "matched_technologies": sorted(matched_technologies),
+            "matched_languages": sorted(matched_languages),
+            "matched_general_terms": sorted(matched_general_terms),
+            "required_hits": required_hits,
+        }
+
+    def _normalize_terms(self, value: Any) -> set[str]:
         terms = normalize_text_list(value)
         normalized_terms = set()
 
@@ -300,7 +474,30 @@ class DatasetBuilderService:
             if normalized:
                 normalized_terms.add(normalized)
 
-        return normalized_terms
+        return self._expand_terms(normalized_terms)
+
+    def _expand_terms(self, terms: set[str]) -> set[str]:
+        expanded_terms = set(terms)
+
+        for term in list(terms):
+            normalized = term.lower().strip()
+
+            if normalized in self.TERM_ALIASES:
+                expanded_terms.update(self.TERM_ALIASES[normalized])
+
+            for alias_key, aliases in self.TERM_ALIASES.items():
+                if normalized in aliases:
+                    expanded_terms.add(alias_key)
+                    expanded_terms.update(aliases)
+
+        return {term.strip().lower() for term in expanded_terms if term.strip()}
+
+    def _filter_relevant_terms(self, terms: set[str]) -> set[str]:
+        return {
+            term
+            for term in terms
+            if term not in self.STOPWORDS and len(term.strip()) >= 3
+        }
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
@@ -308,26 +505,40 @@ class DatasetBuilderService:
         tokens = re.findall(r"[a-záéíóúñ0-9\+#\.]{2,}", text)
         return {token.strip() for token in tokens if token.strip()}
 
-    @staticmethod
-    def _overlap_score(expected_terms: set[str], candidate_terms: set[str]) -> float:
+    def _overlap_score(
+        self,
+        expected_terms: set[str],
+        candidate_terms: set[str],
+    ) -> float:
         if not expected_terms:
             return 0.0
 
-        matched = 0
+        matched = self._matched_terms(expected_terms, candidate_terms)
+        return len(matched) / len(expected_terms)
+
+    def _matched_terms(
+        self,
+        expected_terms: set[str],
+        candidate_terms: set[str],
+    ) -> set[str]:
+        matched_terms = set()
+
+        expanded_candidate_terms = self._expand_terms(candidate_terms)
 
         for expected in expected_terms:
             expected_lower = expected.lower().strip()
+            expected_aliases = self._expand_terms({expected_lower})
 
-            if expected_lower in candidate_terms:
-                matched += 1
+            if expected_aliases & expanded_candidate_terms:
+                matched_terms.add(expected_lower)
                 continue
 
-            for candidate in candidate_terms:
+            for candidate in expanded_candidate_terms:
                 if expected_lower in candidate or candidate in expected_lower:
-                    matched += 1
+                    matched_terms.add(expected_lower)
                     break
 
-        return matched / len(expected_terms)
+        return matched_terms
 
     @staticmethod
     def _build_split_name(candidate_profile_id: str, job_profile_id: str) -> str:
