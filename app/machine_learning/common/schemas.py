@@ -35,6 +35,7 @@ class ModelEvaluation:
     test_size: int
     train_size: int
     version_tag: str
+    cross_validation: dict[str, Any] | None = None
     local_artifact_dir: str | None = None
     artifact_bucket: str | None = None
     artifact_path: str | None = None
@@ -53,6 +54,7 @@ class ModelEvaluation:
             "train_size": self.train_size,
             "test_size": self.test_size,
             "version_tag": self.version_tag,
+            "cross_validation": self.cross_validation or {"enabled": False},
             "artifact_bucket": self.artifact_bucket,
             "artifact_path": self.artifact_path,
             "local_artifact_dir": self.local_artifact_dir,

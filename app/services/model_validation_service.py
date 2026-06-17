@@ -30,6 +30,76 @@ class ModelValidationService:
         if not job_profile:
             raise NotFoundError(f"Job profile '{job_profile_id}' was not found")
 
+        texts, labels = self._build_validation_dataset(
+            job_profile_id=job_profile_id,
+            job_profile=job_profile,
+        )
+
+        if len(texts) < current_app.config["MIN_TRAINING_ROWS"]:
+            raise ValidationError(
+                f"No hay suficientes registros para validar. Actual: {len(texts)}"
+            )
+
+        vectorizer_params = {
+            "max_features": current_app.config["TFIDF_MAX_FEATURES"],
+            "ngram_range": current_app.config["TFIDF_NGRAM_RANGE"],
+            "lowercase": True,
+            "strip_accents": "unicode",
+        }
+
+        requested_folds = folds or current_app.config["CROSS_VALIDATION_FOLDS"]
+        random_state = current_app.config["TRAINING_RANDOM_STATE"]
+
+        knn_estimator = KNNTrainer(
+            n_neighbors=current_app.config["KNN_DEFAULT_NEIGHBORS"],
+        ).build_estimator(sample_size=len(texts))
+
+        tree_estimator = DecisionTreeTrainer(
+            max_depth=current_app.config["TREE_MAX_DEPTH"],
+            min_samples_leaf=current_app.config["TREE_MIN_SAMPLES_LEAF"],
+            random_state=random_state,
+        ).build_estimator()
+
+        results = {
+            "knn": evaluate_with_cross_validation(
+                texts=texts,
+                labels=labels,
+                estimator=knn_estimator,
+                vectorizer_params=vectorizer_params,
+                requested_folds=requested_folds,
+                random_state=random_state,
+            ),
+            "decision_tree": evaluate_with_cross_validation(
+                texts=texts,
+                labels=labels,
+                estimator=tree_estimator,
+                vectorizer_params=vectorizer_params,
+                requested_folds=requested_folds,
+                random_state=random_state,
+            ),
+        }
+
+        selected_algorithm = self._select_best_algorithm(results)
+
+        return {
+            "job_profile_id": job_profile_id,
+            "job_profile_title": job_profile.get("title"),
+            "total_samples": len(texts),
+            "requested_folds": requested_folds,
+            "method": "StratifiedKFold",
+            "selection_criteria": (
+                "Mayor Recall promedio, luego mayor F1-Score promedio y menor "
+                "desviación estándar del F1-Score."
+            ),
+            "results": results,
+            "selected_algorithm_by_cross_validation": selected_algorithm,
+        }
+
+    def _build_validation_dataset(
+        self,
+        job_profile_id: str,
+        job_profile: dict,
+    ) -> tuple[list[str], list[int]]:
         samples = self.dataset_sample_repository.get_rows(
             job_profile_id=job_profile_id,
             ready_only=True,
@@ -45,10 +115,7 @@ class ModelValidationService:
             if sample.get("candidate_profile_id")
         ]
 
-        candidate_profiles = self.candidate_profile_repository.get_by_ids(
-            candidate_profile_ids
-        )
-
+        candidate_profiles = self.candidate_profile_repository.get_by_ids(candidate_profile_ids)
         candidate_profile_map = {
             profile["id"]: profile
             for profile in candidate_profiles
@@ -59,78 +126,18 @@ class ModelValidationService:
         labels: list[int] = []
 
         for sample in samples:
-            candidate_profile = candidate_profile_map.get(
-                sample.get("candidate_profile_id")
-            )
-
+            candidate_profile = candidate_profile_map.get(sample.get("candidate_profile_id"))
             if not candidate_profile:
                 continue
 
             training_text = build_training_text(job_profile, candidate_profile)
-
             if not training_text.strip():
                 continue
 
             texts.append(training_text)
             labels.append(1 if sample.get("label") else 0)
 
-        if len(texts) < current_app.config["MIN_TRAINING_ROWS"]:
-            raise ValidationError(
-                f"No hay suficientes registros para validar. Actual: {len(texts)}"
-            )
-
-        vectorizer_params = {
-            "max_features": current_app.config["TFIDF_MAX_FEATURES"],
-            "ngram_range": current_app.config["TFIDF_NGRAM_RANGE"],
-            "lowercase": True,
-            "strip_accents": "unicode",
-        }
-
-        requested_folds = folds or current_app.config["CROSS_VALIDATION_FOLDS"]
-
-        knn_estimator = KNNTrainer(
-            n_neighbors=current_app.config["KNN_DEFAULT_NEIGHBORS"]
-        ).build_estimator(sample_size=len(texts))
-
-        tree_estimator = DecisionTreeTrainer(
-            max_depth=current_app.config["TREE_MAX_DEPTH"],
-            min_samples_leaf=current_app.config["TREE_MIN_SAMPLES_LEAF"],
-            random_state=current_app.config["TRAINING_RANDOM_STATE"],
-        ).build_estimator()
-
-        knn_result = evaluate_with_cross_validation(
-            texts=texts,
-            labels=labels,
-            estimator=knn_estimator,
-            vectorizer_params=vectorizer_params,
-            requested_folds=requested_folds,
-            random_state=current_app.config["TRAINING_RANDOM_STATE"],
-        )
-
-        tree_result = evaluate_with_cross_validation(
-            texts=texts,
-            labels=labels,
-            estimator=tree_estimator,
-            vectorizer_params=vectorizer_params,
-            requested_folds=requested_folds,
-            random_state=current_app.config["TRAINING_RANDOM_STATE"],
-        )
-
-        results = {
-            "knn": knn_result,
-            "decision_tree": tree_result,
-        }
-
-        selected_algorithm = self._select_best_algorithm(results)
-
-        return {
-            "job_profile_id": job_profile_id,
-            "job_profile_title": job_profile.get("title"),
-            "total_samples": len(texts),
-            "requested_folds": requested_folds,
-            "results": results,
-            "selected_algorithm_by_cross_validation": selected_algorithm,
-        }
+        return texts, labels
 
     @staticmethod
     def _select_best_algorithm(results: dict) -> str | None:

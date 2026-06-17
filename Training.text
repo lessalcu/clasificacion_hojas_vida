@@ -1,0 +1,48 @@
+
+Endpoints principales:
+
+1) Entrenar una vez:
+POST /api/v1/model-training/job-profiles/<job_profile_id>/train
+
+Body ejemplo:
+{
+  "created_by": "tesis",
+  "dataset_version": "final-run-001",
+  "persist_to_storage": true,
+  "auto_build_dataset": true,
+  "random_state": 43,
+  "iteration_number": 1,
+  "save_training_report": true
+}
+
+2) Ejecutar 50 iteraciones:
+POST /api/v1/model-training/job-profiles/<job_profile_id>/train-iterations
+
+Body ejemplo:
+{
+  "created_by": "tesis",
+  "iterations": 50,
+  "dataset_version_prefix": "final-experiment",
+  "persist_to_storage": true,
+  "auto_build_dataset": true,
+  "base_random_state": 42,
+  "start_iteration": 1
+}
+
+3) Obtener el reporte general sin volver a guardarlo:
+GET /api/v1/model-training/job-profiles/<job_profile_id>/all-executions
+
+4) Generar y guardar el reporte general:
+POST /api/v1/model-training/job-profiles/<job_profile_id>/all-executions/report
+
+Body ejemplo:
+{
+  "persist_to_storage": true
+}
+
+Scripts:
+py scripts/train_iterations.py <job_profile_id> 50 tesis
+py scripts/generate_training_summary.py <job_profile_id>
+
+Nota de seguridad:
+El archivo .env real contiene credenciales. No lo subas a GitHub y rota las claves si fueron compartidas fuera de tu equipo.

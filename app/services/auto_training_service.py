@@ -26,110 +26,81 @@ class AutoTrainingService:
         enabled: bool = True,
         force: bool = False,
     ) -> dict[str, Any]:
-        threshold = max(
-            int(current_app.config["AUTO_RETRAIN_NEW_PROFILES_THRESHOLD"]),
-            int(current_app.config["AUTO_RETRAIN_MIN_THRESHOLD"]),
-        )
+        threshold = int(current_app.config["AUTO_RETRAIN_NEW_PROFILES_THRESHOLD"])
+        min_training_rows = int(current_app.config["MIN_TRAINING_ROWS"])
 
         active_model = self.model_versioning_service.get_active_model(job_profile_id)
-
         active_model_version_id = active_model.get("id") if active_model else None
         last_activation_date = None
 
         if active_model:
-            last_activation_date = active_model.get("activated_at") or active_model.get(
-                "created_at"
-            )
+            last_activation_date = active_model.get("activated_at") or active_model.get("created_at")
 
-        total_valid_profiles = (
-            self.candidate_profile_repository.count_valid_profiles_created_after(
-                created_after=None,
-            )
+        total_valid_profiles = self.candidate_profile_repository.count_valid_profiles_created_after(
+            created_after=None,
         )
-
-        new_profiles_count = (
-            self.candidate_profile_repository.count_valid_profiles_created_after(
-                created_after=last_activation_date,
-            )
+        new_profiles_count = self.candidate_profile_repository.count_valid_profiles_created_after(
+            created_after=last_activation_date,
         )
 
         should_train = force or not active_model or new_profiles_count >= threshold
 
         if not enabled and not force:
-            payload = {
-                "job_profile_id": job_profile_id,
-                "active_model_version_id": active_model_version_id,
-                "created_by": created_by,
-                "threshold": threshold,
-                "new_profiles_count": new_profiles_count,
-                "total_valid_profiles": total_valid_profiles,
-                "should_train": False,
-                "training_executed": False,
-                "status": "skipped",
-                "message": "Auto entrenamiento deshabilitado",
-                "metadata": {
-                    "enabled": enabled,
-                    "force": force,
-                },
-            }
-            saved_check = self.auto_training_check_repository.create(payload)
-
-            return {
-                **payload,
-                "saved_auto_training_check_id": (
-                    saved_check.get("id") if saved_check else None
-                ),
-                "training_result": None,
-            }
+            return self._save_check_result(
+                job_profile_id=job_profile_id,
+                active_model_version_id=active_model_version_id,
+                created_by=created_by,
+                threshold=threshold,
+                new_profiles_count=new_profiles_count,
+                total_valid_profiles=total_valid_profiles,
+                should_train=False,
+                training_executed=False,
+                status="skipped",
+                message="Auto entrenamiento deshabilitado",
+                metadata={"enabled": enabled, "force": force},
+                training_result=None,
+            )
 
         if not should_train:
-            payload = {
-                "job_profile_id": job_profile_id,
-                "active_model_version_id": active_model_version_id,
-                "created_by": created_by,
-                "threshold": threshold,
-                "new_profiles_count": new_profiles_count,
-                "total_valid_profiles": total_valid_profiles,
-                "should_train": False,
-                "training_executed": False,
-                "status": "checked",
-                "message": "No se requiere reentrenamiento",
-                "metadata": {
+            return self._save_check_result(
+                job_profile_id=job_profile_id,
+                active_model_version_id=active_model_version_id,
+                created_by=created_by,
+                threshold=threshold,
+                new_profiles_count=new_profiles_count,
+                total_valid_profiles=total_valid_profiles,
+                should_train=False,
+                training_executed=False,
+                status="checked",
+                message="No se requiere reentrenamiento",
+                metadata={
                     "last_activation_date": last_activation_date,
                     "enabled": enabled,
                     "force": force,
                 },
-            }
-            saved_check = self.auto_training_check_repository.create(payload)
+                training_result=None,
+            )
 
-            return {
-                **payload,
-                "saved_auto_training_check_id": (
-                    saved_check.get("id") if saved_check else None
-                ),
-                "training_result": None,
-            }
-
-        if total_valid_profiles < threshold:
-            payload = {
-                "job_profile_id": job_profile_id,
-                "active_model_version_id": active_model_version_id,
-                "created_by": created_by,
-                "threshold": threshold,
-                "new_profiles_count": new_profiles_count,
-                "total_valid_profiles": total_valid_profiles,
-                "should_train": True,
-                "training_executed": False,
-                "status": "failed",
-                "message": "No hay suficientes perfiles válidos para reentrenar",
-                "metadata": {
+        if total_valid_profiles < min_training_rows:
+            payload = self._save_check_result(
+                job_profile_id=job_profile_id,
+                active_model_version_id=active_model_version_id,
+                created_by=created_by,
+                threshold=threshold,
+                new_profiles_count=new_profiles_count,
+                total_valid_profiles=total_valid_profiles,
+                should_train=True,
+                training_executed=False,
+                status="failed",
+                message="No hay suficientes perfiles válidos para entrenar",
+                metadata={
                     "last_activation_date": last_activation_date,
                     "enabled": enabled,
                     "force": force,
+                    "min_training_rows": min_training_rows,
                 },
-            }
-
-            saved_check = self.auto_training_check_repository.create(payload)
+                training_result=None,
+            )
 
             if not active_model:
                 raise ValidationError(
@@ -137,13 +108,7 @@ class AutoTrainingService:
                     "válidos para entrenar uno nuevo."
                 )
 
-            return {
-                **payload,
-                "saved_auto_training_check_id": (
-                    saved_check.get("id") if saved_check else None
-                ),
-                "training_result": None,
-            }
+            return payload
 
         dataset_version = self._build_dataset_version(job_profile_id)
 
@@ -154,6 +119,7 @@ class AutoTrainingService:
                 dataset_version=dataset_version,
                 persist_to_storage=True,
                 auto_build_dataset=True,
+                save_training_report=True,
             )
 
             selected_model_version_id = (
@@ -162,65 +128,86 @@ class AutoTrainingService:
                 else None
             )
 
-            payload = {
-                "job_profile_id": job_profile_id,
-                "active_model_version_id": active_model_version_id,
-                "created_by": created_by,
-                "threshold": threshold,
-                "new_profiles_count": new_profiles_count,
-                "total_valid_profiles": total_valid_profiles,
-                "should_train": True,
-                "training_executed": True,
-                "selected_model_version_id": selected_model_version_id,
-                "status": "training_completed",
-                "message": "Reentrenamiento automático ejecutado correctamente",
-                "metadata": {
+            return self._save_check_result(
+                job_profile_id=job_profile_id,
+                active_model_version_id=active_model_version_id,
+                created_by=created_by,
+                threshold=threshold,
+                new_profiles_count=new_profiles_count,
+                total_valid_profiles=total_valid_profiles,
+                should_train=True,
+                training_executed=True,
+                selected_model_version_id=selected_model_version_id,
+                status="training_completed",
+                message="Reentrenamiento automático ejecutado correctamente",
+                metadata={
                     "dataset_version": dataset_version,
                     "last_activation_date": last_activation_date,
                     "enabled": enabled,
                     "force": force,
                 },
-            }
-
-            saved_check = self.auto_training_check_repository.create(payload)
-
-            return {
-                **payload,
-                "saved_auto_training_check_id": (
-                    saved_check.get("id") if saved_check else None
-                ),
-                "training_result": training_result,
-            }
+                training_result=training_result,
+            )
 
         except Exception as exc:
-            payload = {
-                "job_profile_id": job_profile_id,
-                "active_model_version_id": active_model_version_id,
-                "created_by": created_by,
-                "threshold": threshold,
-                "new_profiles_count": new_profiles_count,
-                "total_valid_profiles": total_valid_profiles,
-                "should_train": True,
-                "training_executed": False,
-                "status": "failed",
-                "message": str(exc),
-                "metadata": {
+            return self._save_check_result(
+                job_profile_id=job_profile_id,
+                active_model_version_id=active_model_version_id,
+                created_by=created_by,
+                threshold=threshold,
+                new_profiles_count=new_profiles_count,
+                total_valid_profiles=total_valid_profiles,
+                should_train=True,
+                training_executed=False,
+                status="failed",
+                message=str(exc),
+                metadata={
                     "dataset_version": dataset_version,
                     "last_activation_date": last_activation_date,
                     "enabled": enabled,
                     "force": force,
                 },
-            }
+                training_result=None,
+            )
 
-            saved_check = self.auto_training_check_repository.create(payload)
+    def _save_check_result(
+        self,
+        job_profile_id: str,
+        active_model_version_id: str | None,
+        created_by: str | None,
+        threshold: int,
+        new_profiles_count: int,
+        total_valid_profiles: int,
+        should_train: bool,
+        training_executed: bool,
+        status: str,
+        message: str,
+        metadata: dict,
+        training_result: dict | None,
+        selected_model_version_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "job_profile_id": job_profile_id,
+            "active_model_version_id": active_model_version_id,
+            "created_by": created_by,
+            "threshold": threshold,
+            "new_profiles_count": new_profiles_count,
+            "total_valid_profiles": total_valid_profiles,
+            "should_train": should_train,
+            "training_executed": training_executed,
+            "selected_model_version_id": selected_model_version_id,
+            "status": status,
+            "message": message,
+            "metadata": metadata,
+        }
 
-            return {
-                **payload,
-                "saved_auto_training_check_id": (
-                    saved_check.get("id") if saved_check else None
-                ),
-                "training_result": None,
-            }
+        saved_check = self.auto_training_check_repository.create(payload)
+
+        return {
+            **payload,
+            "saved_auto_training_check_id": saved_check.get("id") if saved_check else None,
+            "training_result": training_result,
+        }
 
     @staticmethod
     def _build_dataset_version(job_profile_id: str) -> str:
