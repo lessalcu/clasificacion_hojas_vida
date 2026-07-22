@@ -1,6 +1,11 @@
 from flask import Blueprint, jsonify, request
 
-from app.services.model_inference_service import ModelInferenceService
+from app.services.candidate_results_service import (
+    CandidateResultsService,
+)
+from app.services.model_inference_service import (
+    ModelInferenceService,
+)
 
 model_inference_bp = Blueprint(
     "model_inference",
@@ -9,7 +14,7 @@ model_inference_bp = Blueprint(
 )
 
 service = ModelInferenceService()
-
+results_service = CandidateResultsService()
 
 @model_inference_bp.post(
     "/job-profiles/<job_profile_id>/candidate-profiles/<candidate_profile_id>"
@@ -109,3 +114,35 @@ def get_ranking_by_processing_run(processing_run_id: str):
         ),
         200,
     )
+
+@model_inference_bp.get(
+    "/processing-runs/"
+    "<processing_run_id>/results"
+)
+def get_enriched_results_by_processing_run(
+    processing_run_id: str,
+):
+    limit = (
+        request.args.get("limit")
+        or request.args.get("top_k")
+    )
+
+    result = (
+        results_service
+        .get_processing_run_results(
+            processing_run_id=(
+                processing_run_id
+            ),
+            limit=limit,
+        )
+    )
+
+    return jsonify(
+        {
+            "success": True,
+            "message": (
+                "Candidate results retrieved successfully"
+            ),
+            "data": result,
+        }
+    ), 200
