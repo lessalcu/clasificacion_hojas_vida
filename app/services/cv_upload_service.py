@@ -16,15 +16,49 @@ class CvUploadService:
         self.candidate_repository = CandidateRepository()
         self.candidate_source_repository = CandidateSourceRepository()
 
-    def upload_single(self, file_storage):
-        validated = validate_pdf_file(file_storage, self.max_size_bytes)
+    def validate_single(self, file_storage):
+        try:
+            validated = validate_pdf_file(
+                file_storage,
+                self.max_size_bytes,
+                validate_structure=True,
+            )
+            return {
+                "valid": True,
+                "filename": validated["original_filename"],
+                "file_size_bytes": validated["file_size_bytes"],
+                **validated["document_validation"],
+            }
+        except Exception as error:
+            return {
+                "valid": False,
+                "filename": getattr(file_storage, "filename", None),
+                "errors": [str(error)],
+                "warnings": [],
+            }
 
-        candidate = self.candidate_repository.create({
-            "source_label": "pdf_upload"
-        })
+    def validate_batch(self, files):
+        if not files:
+            raise ValidationError("Se requiere al menos un archivo")
+
+        if len(files) > self.max_batch_files:
+            raise ValidationError(
+                f"El lote supera el máximo permitido de {self.max_batch_files} archivos"
+            )
+
+        return [self.validate_single(file_storage) for file_storage in files]
+
+    def upload_single(self, file_storage):
+        validated = validate_pdf_file(
+            file_storage,
+            self.max_size_bytes,
+            validate_structure=True,
+        )
+
+        candidate = self.candidate_repository.create({"source_label": "pdf_upload"})
 
         if not candidate:
-            raise ValidationError("Candidate could not be created")
+            raise ValidationError("No se pudo crear el candidato")
 
         candidate_id = candidate["id"]
 
@@ -39,16 +73,18 @@ class CvUploadService:
             content_type=validated["mime_type"],
             upsert=False,
         )
-        candidate_source = self.candidate_source_repository.create({
-            "candidate_id": candidate_id,
-            "source_type": "pdf",
-            "original_filename": validated["original_filename"],
-            "storage_bucket": "cv-raw",
-            "storage_path": storage_path,
-            "mime_type": validated["mime_type"],
-            "size_bytes": validated["file_size_bytes"],
-            "extraction_status": "pending",
-        })
+        candidate_source = self.candidate_source_repository.create(
+            {
+                "candidate_id": candidate_id,
+                "source_type": "pdf",
+                "original_filename": validated["original_filename"],
+                "storage_bucket": "cv-raw",
+                "storage_path": storage_path,
+                "mime_type": validated["mime_type"],
+                "size_bytes": validated["file_size_bytes"],
+                "extraction_status": "pending",
+            }
+        )
 
         return {
             "candidate": candidate,
@@ -57,29 +93,35 @@ class CvUploadService:
                 "path": getattr(upload_result, "path", storage_path),
                 "full_path": getattr(upload_result, "full_path", None),
             },
+            "validation": validated["document_validation"],
         }
 
     def upload_batch(self, files):
         if not files:
-            raise ValidationError("At least one file is required")
+            raise ValidationError("Se requiere al menos un archivo")
 
         if len(files) > self.max_batch_files:
             raise ValidationError(
-                f"Batch exceeds the maximum allowed number of files: {self.max_batch_files}"
+                f"El lote supera el máximo permitido de {self.max_batch_files} archivos"
             )
 
         results = []
         for file_storage in files:
             try:
-                results.append({
-                    "success": True,
-                    "result": self.upload_single(file_storage)
-                })
+                results.append(
+                    {
+                        "success": True,
+                        "filename": getattr(file_storage, "filename", None),
+                        "result": self.upload_single(file_storage),
+                    }
+                )
             except Exception as error:
-                results.append({
-                    "success": False,
-                    "filename": getattr(file_storage, "filename", None),
-                    "error": str(error)
-                })
+                results.append(
+                    {
+                        "success": False,
+                        "filename": getattr(file_storage, "filename", None),
+                        "error": str(error),
+                    }
+                )
 
         return results

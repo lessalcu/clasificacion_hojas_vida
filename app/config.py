@@ -59,10 +59,19 @@ class Config:
     SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     SUPABASE_PROJECT_REF = os.getenv("SUPABASE_PROJECT_REF")
 
-    MAX_CV_FILE_SIZE_MB = int(os.getenv("MAX_CV_FILE_SIZE_MB", 6))
+    MAX_CV_FILE_SIZE_MB = int(os.getenv("MAX_CV_FILE_SIZE_MB", 10))
     MAX_CV_FILE_SIZE_BYTES = MAX_CV_FILE_SIZE_MB * 1024 * 1024
-    MAX_BATCH_FILES = int(os.getenv("MAX_BATCH_FILES", 20))
-    MAX_CONTENT_LENGTH = int(os.getenv("MAX_REQUEST_SIZE_MB", 30)) * 1024 * 1024
+    MAX_BATCH_FILES = int(os.getenv("MAX_BATCH_FILES", 50))
+    MAX_CONTENT_LENGTH = (
+        int(
+            os.getenv(
+                "MAX_REQUEST_SIZE_MB",
+                str((MAX_CV_FILE_SIZE_MB * MAX_BATCH_FILES) + 20),
+            )
+        )
+        * 1024
+        * 1024
+    )
 
     MODEL_ARTIFACTS_DIR = os.getenv("MODEL_ARTIFACTS_DIR", "artifacts")
     MODEL_ARTIFACT_BUCKET = os.getenv("MODEL_ARTIFACT_BUCKET", "model-artifacts")

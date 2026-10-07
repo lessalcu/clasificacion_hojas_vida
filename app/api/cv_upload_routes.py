@@ -13,20 +13,66 @@ def build_service():
     )
 
 
+@cv_upload_bp.post("/validate")
+def validate_single_cv():
+    file = request.files.get("file")
+    if not file:
+        raise ValidationError("El campo 'file' es obligatorio")
+
+    result = build_service().validate_single(file)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Validación completada",
+                "data": result,
+            }
+        ),
+        200,
+    )
+
+
+@cv_upload_bp.post("/validate-batch")
+def validate_batch_cv():
+    files = request.files.getlist("files")
+    files = [file for file in files if file and (file.filename or "").strip()]
+
+    if not files:
+        raise ValidationError("El campo 'files' es obligatorio")
+
+    result = build_service().validate_batch(files)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Validación del lote completada",
+                "data": result,
+            }
+        ),
+        200,
+    )
+
+
 @cv_upload_bp.post("/upload")
 def upload_single_cv():
     file = request.files.get("file")
     if not file:
-        raise ValidationError("Field 'file' is required")
+        raise ValidationError("El campo 'file' es obligatorio")
 
-    service = build_service()
-    result = service.upload_single(file)
+    result = build_service().upload_single(file)
 
-    return jsonify({
-        "success": True,
-        "message": "CV uploaded successfully",
-        "data": result
-    }), 201
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Hoja de vida cargada correctamente",
+                "data": result,
+            }
+        ),
+        201,
+    )
 
 
 @cv_upload_bp.post("/upload-batch")
@@ -35,13 +81,13 @@ def upload_batch_cv():
     files = [file for file in files if file and (file.filename or "").strip()]
 
     if not files:
-        raise ValidationError("Field 'files' is required")
+        raise ValidationError("El campo 'files' es obligatorio")
 
-    service = build_service()
-    result = service.upload_batch(files)
+    result = build_service().upload_batch(files)
 
-    return jsonify({
-        "success": True,
-        "message": "Batch upload processed",
-        "data": result
-    }), 201
+    return (
+        jsonify(
+            {"success": True, "message": "Carga por lote procesada", "data": result}
+        ),
+        201,
+    )
